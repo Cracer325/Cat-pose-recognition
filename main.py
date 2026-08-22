@@ -14,16 +14,19 @@ MEME_NAMES = {
     "point laugh": "laugh and point .jpg",
     "absolute cinema": "absolute.jpg",
     "rub chin": "ponder.jpg",
+    "cat waving": "cat_wave_hello.PNG",
+    "hands in scheming": "cat_scheming.jpg",
 }
 
 # thresholds for giving certain memes (all positive, we wont care yet which way we turn)
-REQUIRED_FRAMES = 30
+REQUIRED_FRAMES = 10
 SIDE_EYE_ANGLE = 20
 FINGER_MIN_ANGLE = 155
 HAND_NEAR_FACE = 0.08
 MIN_MOUTH_RATIO_FOR_OPEN = 0.14
 THUMB_NEAR_CHIN_THRESH = 0.14
 INDEX_NEAR_CHIN_THRESH = 0.06
+DISTANCE_THRESHOLD_FOR_TOUCHING_FINGERS = 0.08
 # get a 3x3 rotation matrix we want to extract the angles
 def get_rotation_angles(matrix):
 
@@ -159,11 +162,22 @@ def hand_fully_spread(hand):
         and hand["ring"]
         and hand["pinky"]
     )
+def finger_are_close(tip1, tip2):
+    #same comment as the below function about ordering the hands
+    dist = distance(tip1, tip2)
+    return dist < DISTANCE_THRESHOLD_FOR_TOUCHING_FINGERS
 def hands_in_abs_cinema(hand1, hand2):
     #in reality i should make it pass the left hand and right hand specifically, however for this pose it doesn't matter
     #and I cant be bothered :)
     return hand_fully_spread(hand1) and hand_fully_spread(hand2)
-
+def all_fingers_are_touching(hand1, hand2):
+    indx1, indx2 = hand1["index_tip"], hand2["index_tip"]
+    midl1, midl2 = hand1["middle_tip"], hand2["middle_tip"]
+    ring1, ring2 = hand1["ring_tip"], hand2["ring_tip"]
+    pinky1, pinky2 = hand1["pinky_tip"], hand2["pinky_tip"]
+    print("idx dist: ", distance(indx1, indx2))
+    return (finger_are_close(indx1, indx2) and finger_are_close(midl1, midl2) and
+            finger_are_close(ring1, ring2) and finger_are_close(pinky1, pinky2))
 def hand_rubs_chin(face, hand):
     thumb = hand["thumb_tip"]
     index = hand["index_tip"]
@@ -183,24 +197,30 @@ def classify_whole_features(features):
         return MEME_NAMES["idle"]
     hand_array = features["hand"]
     if len(hand_array) == 2:
+        if all_fingers_are_touching(hand_array[0], hand_array[1]):
+            return MEME_NAMES["hands in scheming"]
         if hands_in_abs_cinema(hand_array[0], hand_array[1]):
             return MEME_NAMES["absolute cinema"]
         return MEME_NAMES["idle"]
     #if only one present we wont care which one it is (yet)
     hand = hand_array[0]
+
+    #categorized based on order-sensitive poses
     if hand_rubs_chin(face, hand):
         return MEME_NAMES["rub chin"]
+    if is_pointing(hand) and index_near_face(face, hand):
+        return MEME_NAMES["shhh"]
+
     if (is_pointing(hand) or is_fist(hand)) and is_mouth_open(face):
         return MEME_NAMES["point laugh"]
     if is_pointing(hand) and not index_near_face(face, hand):
         return MEME_NAMES["nerd"]
-    if is_pointing(hand) and index_near_face(face, hand):
-        return MEME_NAMES["shhh"]
     if is_fist(hand) and not side_eye(face):
         return MEME_NAMES["angry fist"]
     if is_peace(hand):
         return MEME_NAMES["peace"]
-
+    if hand_fully_spread(hand):
+        return MEME_NAMES["cat waving"]
     return MEME_NAMES["idle"]
 def show_meme(meme):
     image = cv2.imread("memes/"+meme)
@@ -346,15 +366,18 @@ while True:
                 "hand_present": False
             }
         meme = classify_whole_features(features)
+
         if meme == last_meme:
             meme_frames += 1
         else:
             last_meme = meme
             meme_frames = 1
 
-        if meme_frames >= REQUIRED_FRAMES:
+        if meme_frames >= REQUIRED_FRAMES and meme != displayed_meme:
             displayed_meme = meme
-        show_meme(meme)
+
+        if displayed_meme is not None:
+            show_meme(displayed_meme)
     else:
         print("NO FACE")
     ms += 33
