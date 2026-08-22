@@ -16,6 +16,7 @@ MEME_NAMES = {
     "rub chin": "ponder.jpg",
     "cat waving": "cat_wave_hello.PNG",
     "hands in scheming": "cat_scheming.jpg",
+    "infinite void": "cat_infinite_void.jpg",
 }
 
 # thresholds for giving certain memes (all positive, we wont care yet which way we turn)
@@ -26,7 +27,7 @@ HAND_NEAR_FACE = 0.08
 MIN_MOUTH_RATIO_FOR_OPEN = 0.14
 THUMB_NEAR_CHIN_THRESH = 0.14
 INDEX_NEAR_CHIN_THRESH = 0.06
-DISTANCE_THRESHOLD_FOR_TOUCHING_FINGERS = 0.08
+DISTANCE_THRESHOLD_FOR_TOUCHING_FINGERS = 0.064
 # get a 3x3 rotation matrix we want to extract the angles
 def get_rotation_angles(matrix):
 
@@ -201,7 +202,8 @@ def classify_whole_features(features):
             return MEME_NAMES["hands in scheming"]
         if hands_in_abs_cinema(hand_array[0], hand_array[1]):
             return MEME_NAMES["absolute cinema"]
-        return MEME_NAMES["idle"]
+        #we actually wont return idle so that if someone is doing a 1 handed pose and then does something un-important with the other hand it wont fail
+        #however there's no way for me to "decide" which hand is doing the pose and which isn't so we'll go with the one thats being more time on screen (which is thankfully just indx 0
     #if only one present we wont care which one it is (yet)
     hand = hand_array[0]
 
@@ -217,6 +219,8 @@ def classify_whole_features(features):
         return MEME_NAMES["nerd"]
     if is_fist(hand) and not side_eye(face):
         return MEME_NAMES["angry fist"]
+    if (is_peace(hand) or is_pointing(hand)) and finger_are_close(hand["index_tip"], hand["middle_tip"]):
+        return MEME_NAMES["infinite void"]
     if is_peace(hand):
         return MEME_NAMES["peace"]
     if hand_fully_spread(hand):
@@ -235,159 +239,161 @@ def show_meme(meme):
     )
 
     cv2.imshow(IMAGE_WINDOW, image)
-BaseOptions = mp.tasks.BaseOptions
-FaceLandmarkerTask = mp.tasks.vision.FaceLandmarker
-HandLandmarkerTask = mp.tasks.vision.HandLandmarker
-FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-RunningMode = mp.tasks.vision.RunningMode
-
-#meme window setup
-IMAGE_WIDTH = 800
-IMAGE_HEIGHT = 600
-
-IMAGE_WINDOW = "Meme"
-
-cv2.namedWindow(
-    IMAGE_WINDOW,
-    cv2.WINDOW_NORMAL
-)
-
-cv2.resizeWindow(
-    IMAGE_WINDOW,
-    IMAGE_WIDTH,
-    IMAGE_HEIGHT
-)
-
-faceoptions = FaceLandmarkerOptions(
-    base_options=BaseOptions(
-        model_asset_path="models/face_landmarker.task"
-    ),
-    running_mode=RunningMode.VIDEO,
-    output_facial_transformation_matrixes=True
-)
-hand_options = HandLandmarkerOptions(
-    base_options=BaseOptions(
-        model_asset_path="models/hand_landmarker.task"
-    ),
-    running_mode=RunningMode.VIDEO,
-    num_hands=2
-)
-
-FaceLandmarker = FaceLandmarkerTask.create_from_options(faceoptions)
-HandLandmarker = HandLandmarkerTask.create_from_options(hand_options)
-video=cv2.VideoCapture(0)
-ms=0
 
 
-last_meme = None
-meme_frames = 0
-displayed_meme = None
+if __name__ == "__main__":
+    BaseOptions = mp.tasks.BaseOptions
+    FaceLandmarkerTask = mp.tasks.vision.FaceLandmarker
+    HandLandmarkerTask = mp.tasks.vision.HandLandmarker
+    FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+    RunningMode = mp.tasks.vision.RunningMode
 
-#####################################################################################################
-##### ---------- this is the main loop for putting the image and grabbing landmarks  ---------- #####
-#####################################################################################################
-while True:
-    # basically boilerplate
-    ret, image = video.read()
-    rgb = cv2.cvtColor(
-        image,
-        cv2.COLOR_BGR2RGB
-    )
-    img = mp.Image(
-        image_format=mp.ImageFormat.SRGB,
-        data=rgb
+    # meme window setup
+    IMAGE_WIDTH = 800
+    IMAGE_HEIGHT = 600
+
+    IMAGE_WINDOW = "Meme"
+
+    cv2.namedWindow(
+        IMAGE_WINDOW,
+        cv2.WINDOW_NORMAL
     )
 
-    result = FaceLandmarker.detect_for_video(
-        img,
-        ms
+    cv2.resizeWindow(
+        IMAGE_WINDOW,
+        IMAGE_WIDTH,
+        IMAGE_HEIGHT
     )
-    hand_result = HandLandmarker.detect_for_video(
-        img,
-        ms
-    )
-    #we will only show memes if there is face due to the fact that everything is built on making the face :)
-    if result.face_landmarks:
-        #grabbing face landmarks,
-        face  = result.face_landmarks[0]
-        upper_lip = face[13]
-        lower_lip = face[14]
 
-        right_cheek = face[234]
-        left_cheek = face[454]
-        chin = face[152]
-        mouth_opening = distance(
-            upper_lip,
-            lower_lip
+    faceoptions = FaceLandmarkerOptions(
+        base_options=BaseOptions(
+            model_asset_path="models/face_landmarker.task"
+        ),
+        running_mode=RunningMode.VIDEO,
+        output_facial_transformation_matrixes=True
+    )
+    hand_options = HandLandmarkerOptions(
+        base_options=BaseOptions(
+            model_asset_path="models/hand_landmarker.task"
+        ),
+        running_mode=RunningMode.VIDEO,
+        num_hands=2
+    )
+
+    FaceLandmarker = FaceLandmarkerTask.create_from_options(faceoptions)
+    HandLandmarker = HandLandmarkerTask.create_from_options(hand_options)
+    video = cv2.VideoCapture(0)
+    ms = 0
+
+    last_meme = None
+    meme_frames = 0
+    displayed_meme = None
+
+    #####################################################################################################
+    ##### ---------- this is the main loop for putting the image and grabbing landmarks  ---------- #####
+    #####################################################################################################
+    while True:
+        # basically boilerplate
+        ret, image = video.read()
+        rgb = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2RGB
         )
-        face_width = distance(
-            right_cheek,
-            left_cheek
+        img = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=rgb
         )
-        # will be used when doing tounge stuff
-        mouth_ratio = mouth_opening / face_width
 
-        rotation_matrix = result.facial_transformation_matrixes[0]
-        # yaw rotating in an o shape, pitch rotate left to right, roll rotate up down
-        # positive: yaw is right, pitch left, roll down
-        yaw, pitch, roll = get_rotation_angles(rotation_matrix)
-        face_features = {
-            "yaw": yaw,
-            "pitch": pitch,
-            "roll": roll,
-            "mouth_open": mouth_ratio,
-            "upper_lip": upper_lip,
-            "chin_cords": chin,
-        }
-        # so pycharm wont be mad :)
-        features = {}
-        #check for extended index next to face
-        if hand_result.hand_landmarks:
-            hand = hand_result.hand_landmarks[0]
-            handedness = hand_result.handedness[0]
-            # important points, 1-4-thumb tip (last num is tip), 5-8 - index tip, 9-12- middle tip, 13-16 ring tip, 17-20 pinky tip
-            #which hand (doesnt really matter but might be useful), can also check which fingers are present by get_finger_state
-            #print("hand:", index_tip, "which hand:", hand_result.handedness[0][0].category_name)
-            #we'll calculate the distance of the index tip to the face if present
-            fingers = get_finger_states(hand)
-            features = {
-                "face": face_features,
-                "hand_present": True,
-                "hand": [fingers | {"hand_name": handedness[0].category_name }]
+        result = FaceLandmarker.detect_for_video(
+            img,
+            ms
+        )
+        hand_result = HandLandmarker.detect_for_video(
+            img,
+            ms
+        )
+        # we will only show memes if there is face due to the fact that everything is built on making the face :)
+        if result.face_landmarks:
+            # grabbing face landmarks,
+            face = result.face_landmarks[0]
+            upper_lip = face[13]
+            lower_lip = face[14]
+
+            right_cheek = face[234]
+            left_cheek = face[454]
+            chin = face[152]
+            mouth_opening = distance(
+                upper_lip,
+                lower_lip
+            )
+            face_width = distance(
+                right_cheek,
+                left_cheek
+            )
+            # will be used when doing tounge stuff
+            mouth_ratio = mouth_opening / face_width
+
+            rotation_matrix = result.facial_transformation_matrixes[0]
+            # yaw rotating in an o shape, pitch rotate left to right, roll rotate up down
+            # positive: yaw is right, pitch left, roll down
+            yaw, pitch, roll = get_rotation_angles(rotation_matrix)
+            face_features = {
+                "yaw": yaw,
+                "pitch": pitch,
+                "roll": roll,
+                "mouth_open": mouth_ratio,
+                "upper_lip": upper_lip,
+                "chin_cords": chin,
             }
-            if len(hand_result.hand_landmarks) >= 2:
-                features["hand"].append(get_finger_states(hand_result.hand_landmarks[1])
-                                        | {"hand_name":  hand_result.handedness[1][0].category_name})
+            # so pycharm wont be mad :)
+            features = {}
+            # check for extended index next to face
+            if hand_result.hand_landmarks:
+                hand = hand_result.hand_landmarks[0]
+                handedness = hand_result.handedness[0]
+                # important points, 1-4-thumb tip (last num is tip), 5-8 - index tip, 9-12- middle tip, 13-16 ring tip, 17-20 pinky tip
+                # which hand (doesnt really matter but might be useful), can also check which fingers are present by get_finger_state
+                # print("hand:", index_tip, "which hand:", hand_result.handedness[0][0].category_name)
+                # we'll calculate the distance of the index tip to the face if present
+                fingers = get_finger_states(hand)
+                features = {
+                    "face": face_features,
+                    "hand_present": True,
+                    "hand": [fingers | {"hand_name": handedness[0].category_name}]
+                }
+                if len(hand_result.hand_landmarks) >= 2:
+                    features["hand"].append(get_finger_states(hand_result.hand_landmarks[1])
+                                            | {"hand_name": hand_result.handedness[1][0].category_name})
+            else:
+                # put all the values we care about in one place
+                features = {
+                    "face": face_features,
+                    "hand_present": False
+                }
+            meme = classify_whole_features(features)
+
+            if meme == last_meme:
+                meme_frames += 1
+            else:
+                last_meme = meme
+                meme_frames = 1
+
+            if meme_frames >= REQUIRED_FRAMES and meme != displayed_meme:
+                displayed_meme = meme
+
+            if displayed_meme is not None:
+                show_meme(displayed_meme)
         else:
-            #put all the values we care about in one place
-            features = {
-                "face": face_features,
-                "hand_present": False
-            }
-        meme = classify_whole_features(features)
+            print("NO FACE")
+        ms += 33
+        cv2.imshow("da face", image)
+        k = cv2.waitKey(1)
+        if k == ord('q'):
+            break
+    video.release()
+    cv2.destroyAllWindows()
 
-        if meme == last_meme:
-            meme_frames += 1
-        else:
-            last_meme = meme
-            meme_frames = 1
-
-        if meme_frames >= REQUIRED_FRAMES and meme != displayed_meme:
-            displayed_meme = meme
-
-        if displayed_meme is not None:
-            show_meme(displayed_meme)
-    else:
-        print("NO FACE")
-    ms += 33
-    cv2.imshow("da face", image)
-    k = cv2.waitKey(1)
-    if k == ord('q'):
-        break
-video.release()
-cv2.destroyAllWindows()
-
-FaceLandmarker.close()
-HandLandmarker.close()
+    FaceLandmarker.close()
+    HandLandmarker.close()
 
